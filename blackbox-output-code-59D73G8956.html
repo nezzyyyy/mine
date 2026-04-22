@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Flappy Creeper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #87CEEB 0%, #98D8E8 100%);
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        canvas {
+            border: 3px solid #4A5D23;
+            background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 70%, #90EE90 70%, #228B22 100%);
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .game-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #4A5D23;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        .start-screen, .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255,255,255,0.95);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            border: 4px solid #4A5D23;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            font-family: 'Courier New', monospace;
+        }
+
+        .start-screen h1, .game-over h1 {
+            color: #4A5D23;
+            margin-bottom: 20px;
+            font-size: 32px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .start-screen p, .game-over p {
+            color: #228B22;
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background: #4A5D23;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        button:hover {
+            background: #5D742F;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+        }
+
+        .score {
+            font-size: 28px;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="game-info">
+        <span class="score" id="score">Score: 0</span>
+    </div>
+    
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+    <div class="start-screen" id="startScreen">
+        <h1>🟩 MINECRAFT</h1>
+        <h1>FLAPPY CREEPER 🟩</h1>
+        <p>Klik atau tekan SPACE untuk terbang!</p>
+        <p>Hindari blok obsidian!</p>
+        <button onclick="startGame()">MULAI GAME</button>
+    </div>
+
+    <div class="game-over" id="gameOver" style="display: none;">
+        <h1>GAME OVER</h1>
+        <p id="finalScore">Score: 0</p>
+        <button onclick="startGame()">MAIN LAGI</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+
+        // Game variables
+        let gameRunning = false;
+        let score = 0;
+        let gravity = 0.4;
+        let jumpPower = -8;
+        let pipes = [];
+        let pipeWidth = 60;
+        let pipeGap = 180;
+        let frame = 0;
+
+        // Creeper (player)
+        const creeper = {
+            x: 80,
+            y: 300,
+            width: 40,
+            height: 40,
+            velocity: 0,
+            rotation: 0
+        };
+
+        // Pipe class
+        class Pipe {
+            constructor(x) {
+                this.x = x;
+                this.height = Math.random() * (canvas.height - pipeGap - 100) + 50;
+                this.passed = false;
+            }
+
+            update() {
+                this.x -= 2;
+            }
+
+            draw() {
+                // Pipe atas (Obsidian)
+                ctx.fillStyle = '#2D1B69'; // Warna obsidian
+                ctx.fillRect(this.x, 0, pipeWidth, this.height);
+                ctx.fillStyle = '#3C2F8F';
+                ctx.fillRect(this.x + 5, 5, pipeWidth - 10, this.height - 10);
+                
+                // Pipe bawah (Obsidian)
+                let bottomY = this.height + pipeGap;
+                ctx.fillStyle = '#2D1B69';
+                ctx.fillRect(this.x, bottomY, pipeWidth, canvas.height - bottomY);
+                ctx.fillStyle = '#3C2F8F';
+                ctx.fillRect(this.x + 5, bottomY + 5, pipeWidth - 10, canvas.height - bottomY - 10);
+                
+                // Highlight obsidian
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(this.x + 2, 2, pipeWidth - 4, 10);
+                ctx.fillRect(this.x + 2, bottomY + 2, pipeWidth - 4, 10);
+            }
+
+            collidesWith(creeper) {
+                return (
+                    creeper.x < this.x + pipeWidth &&
+                    creeper.x + creeper.width > this.x &&
+                    (creeper.y < this.height || creeper.y + creeper.height > this.height + pipeGap)
+                );
+            }
+        }
+
+        function drawCreeper() {
+            ctx.save();
+            ctx.translate(creeper.x + creeper.width/2, creeper.y + creeper.height/2);
+            ctx.rotate(creeper.rotation);
+            
+            // Creeper body (hijau)
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(-creeper.width/2, -creeper.height/2, creeper.width, creeper.height);
+            
+            // Creeper face pattern
+            ctx.fillStyle = '#2E7D32';
+            // Eyes
+            ctx.fillRect(-12, -12, 6, 8);
+            ctx.fillRect(6, -12, 6, 8);
+            // Mouth
+            ctx.fillRect(-8, 8, 16, 6);
+            
+            // Feet
+            ctx.fillStyle = '#66BB6A';
+            ctx.fillRect(-10, creeper.height/2 - 4, 6, 8);
+            ctx.fillRect(4, creeper.height/2 - 4, 6, 8);
+            
+            ctx.restore();
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // Update creeper physics
+            creeper.velocity += gravity;
+            creeper.y += creeper.velocity;
+            creeper.rotation = Math.min(Math.max(creeper.velocity * 0.1, -0.3), 0.5);
+
+            // Create new pipes
+            if (frame % 90 === 0) {
+                pipes.push(new Pipe(canvas.width));
+            }
+
+            // Update pipes
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                pipes[i].update();
+                
+                // Score
+                if (!pipes[i].passed && pipes[i].x + pipeWidth < creeper.x) {
+                    pipes[i].passed = true;
+                    score++;
+                    scoreElement.textContent = `Score: ${score}`;
+                }
+
+                // Remove off-screen pipes
+                if (pipes[i].x + pipeWidth < 0) {
+                    pipes.splice(i, 1);
+                }
+            }
+
+            frame++;
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw clouds
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.beginPath();
+            ctx.arc(100 + Math.sin(frame * 0.01) * 20, 80, 30, 0, Math.PI * 2);
+            ctx.arc(130 + Math.sin(frame * 0.01) * 20, 70, 25, 0, Math.PI * 2);
+            ctx.arc(160 + Math.sin(frame * 0.01) * 20, 85, 35, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw grass ground
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+            ctx.fillStyle = '#32CD32';
+            ctx.fillRect(0, canvas.height - 45, canvas.width, 5);
+
+            // Draw creeper
+            drawCreeper();
+
+            // Draw pipes
+            pipes.forEach(pipe => pipe.draw());
+
+            // Game over check
+            if (creeper.y + creeper.height > canvas.height - 40 || creeper.y < 0) {
+                gameOver();
+            }
+
+            pipes.forEach(pipe => {
+                if (pipe.collidesWith(creeper)) {
+                    gameOver();
+                }
+            });
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function jump() {
+            if (gameRunning) {
+                creeper.velocity = jumpPower;
+            }
+        }
+
+        function startGame() {
+            gameRunning = true;
+            score = 0;
+            creeper.y = 300;
+            creeper.velocity = 0;
+            creeper.rotation = 0;
+            pipes = [];
+            frame = 0;
+            scoreElement.textContent = 'Score: 0';
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            finalScoreElement.textContent = `Score: ${score}`;
+            gameOverScreen.style.display = 'block';
+        }
+
+        // Event listeners
+        canvas.addEventListener('click', jump);
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                jump();
+            }
+        });
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>
